@@ -1,0 +1,40 @@
+# Environment & secrets
+.env
+.env.local
+.env.development
+.env.production
+.env.staging
+*.env
+
+# Dependencies
+node_modules/
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Build output
+dist/
+build/
+.next/
+out/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Logs
+*.log
+logs/
+
+# Database
+*.sqlite
+*.db
+
+# Editor / local tooling
+.claude/
