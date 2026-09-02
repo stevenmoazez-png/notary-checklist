@@ -5,7 +5,7 @@ Field tools for a notary signing agent. Two parts:
 | Part | What it does | Needs network |
 |---|---|---|
 | **Checklist** (`/`) | WA residential seller closing, 39 items across six phases, stop-the-signing triggers, UPL-safe scripts. Progress saved on-device. | No — works offline once loaded |
-| **Pre-signing brief** (`/analyze/`) | Photograph or paste up to 6 pages from a closing package; get a private prep brief — tiered point-at list, discrepancies, verified arithmetic, and a presentment script with the document's real figures. | Yes — one Claude Opus 5 call per brief |
+| **Pre-signing brief** (`/analyze/`) | Photograph or paste up to 6 pages from a closing package; get a private prep brief — the document top to bottom in printed order with figures, what to point at, and a coaching note per section; then the 60-second presentment script, the flag-and-escalate list, a never-skip list, verified arithmetic, and prep notes. | Yes — one Claude Opus 5 call per brief |
 
 **Live:** https://notary-brief.fly.dev/
 **Static copy (checklist only, offline):** https://stevenmoazez-png.github.io/notary-checklist/
