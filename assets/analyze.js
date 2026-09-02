@@ -151,20 +151,6 @@
     return s;
   }
 
-  function pointList(items) {
-    var ul = el("ul", "points");
-    items.forEach(function (p) {
-      var li = el("li");
-      var top = el("div", "pt-top");
-      top.appendChild(el("span", "pt-label", p.label || ""));
-      if (p.amount) top.appendChild(el("span", "pt-amt", p.amount));
-      li.appendChild(top);
-      if (p.why) li.appendChild(el("p", "pt-why", p.why));
-      ul.appendChild(li);
-    });
-    return ul;
-  }
-
   function draw(b) {
     brief.textContent = "";
     brief.className = "brief on";
@@ -189,54 +175,91 @@
 
     if (b.headline) brief.appendChild(el("p", "brief-headline", b.headline));
 
-    // anomalies first — this is the stop signal
-    if (b.anomalies && b.anomalies.length) {
-      var s = section(null, "Discrepancies", "Verify these against the document before you go.");
+    // the boundary — same words every time, the one rule everything serves
+    var rule = el("div", "rule-note");
+    var rb = el("b", null, "The boundary: ");
+    rule.appendChild(rb);
+    rule.appendChild(document.createTextNode("you locate and identify — you do not explain. Point at any line. Say what a line means and you've crossed into practicing law. Anything substantive goes to the escrow officer."));
+    brief.appendChild(rule);
+
+    // 1. top-to-bottom walkthrough, in document order
+    if (b.walkthrough && b.walkthrough.length) {
+      var w = section(null, "Top to bottom — what to point at", "In the order it's printed. Read this with the page next to you.");
+      var ol = el("ol", "walk");
+      b.walkthrough.forEach(function (s) {
+        var li = el("li", "wsec");
+        li.appendChild(el("h4", "wtitle", s.title || ""));
+        if (s.lines && s.lines.length) {
+          var tbl = el("table", "wlines");
+          var tb = el("tbody");
+          s.lines.forEach(function (ln) {
+            var tr = el("tr");
+            tr.appendChild(el("td", "wl", ln.label || ""));
+            tr.appendChild(el("td", "wa", ln.amount || ""));
+            tb.appendChild(tr);
+          });
+          tbl.appendChild(tb);
+          li.appendChild(tbl);
+        }
+        if (s.pointAt) {
+          var pa = el("p", "wpoint");
+          pa.appendChild(el("span", "wcue", "Point at"));
+          pa.appendChild(document.createTextNode(s.pointAt));
+          li.appendChild(pa);
+        }
+        if (s.note) li.appendChild(el("p", "wnote", s.note));
+        ol.appendChild(li);
+      });
+      w.appendChild(ol);
+      brief.appendChild(w);
+    }
+
+    // 2. the sixty-second presentment
+    if (b.script) {
+      var sc = section(null, "Your 60-second presentment");
+      var box = el("div", "script");
+      box.appendChild(el("span", "cue", "Say this — then stop talking"));
+      box.appendChild(el("p", null, b.script));
+      var after = el("p", "after", "Finger lands on the biggest deduction when you say it. Then watch their face.");
+      box.appendChild(after);
+      sc.appendChild(box);
+      brief.appendChild(sc);
+    }
+
+    // 3. flag and escalate
+    if (b.flags && b.flags.length) {
+      var f = section(null, "Flag-and-escalate list", "For escrow, not the client. Sorted by how much they matter.");
       var wrap = el("div", "anoms");
-      b.anomalies
+      b.flags
         .slice()
         .sort(function (a, c) {
           var r = { high: 0, medium: 1, low: 2 };
           return (r[a.severity] ?? 3) - (r[c.severity] ?? 3);
         })
-        .forEach(function (a) {
+        .forEach(function (a, i) {
           var n = el("div", "anom" + (a.severity === "high" ? " high" : ""));
-          n.appendChild(el("div", "sev", (a.severity || "note") + " · " +
-            (a.severity === "high" ? "stop the signing" : a.severity === "medium" ? "raise with escrow first" : "mention on return")));
+          n.appendChild(el("div", "sev", (i + 1) + " · " + (a.severity || "note") + " · " +
+            (a.severity === "high" ? "stop the signing" : a.severity === "medium" ? "raise with escrow first" : "mention when returning the package")));
           n.appendChild(el("div", "what", a.what || ""));
           if (a.detail) n.appendChild(el("p", "detail", a.detail));
           wrap.appendChild(n);
         });
-      s.appendChild(wrap);
-      brief.appendChild(s);
+      f.appendChild(wrap);
+      brief.appendChild(f);
     }
 
-    // bottom line
-    if (b.bottomLine && b.bottomLine.amount) {
-      var bl = el("div", "bottomline");
-      bl.appendChild(el("p", "lbl", b.bottomLine.label || "Bottom line"));
-      bl.appendChild(el("p", "amt", b.bottomLine.amount));
-      brief.appendChild(bl);
+    // 4. if you only do a few things
+    if (b.neverSkip && b.neverSkip.length) {
+      var ns = section("t1", "Never skip", "If you did only these, you did the job.");
+      var nl = el("ol", "never");
+      b.neverSkip.forEach(function (t) { nl.appendChild(el("li", null, t)); });
+      ns.appendChild(nl);
+      brief.appendChild(ns);
     }
 
-    if (b.tier1 && b.tier1.length) {
-      var t1 = section("t1", "Never skip", "Say these out loud and watch their face.");
-      t1.appendChild(pointList(b.tier1));
-      brief.appendChild(t1);
-    }
-    if (b.tier2 && b.tier2.length) {
-      var t2 = section(null, "Point at briefly", "Ten seconds — run your finger down the column.");
-      t2.appendChild(pointList(b.tier2));
-      brief.appendChild(t2);
-    }
-    if (b.tier3 && b.tier3.length) {
-      var t3 = section(null, "Know, don't volunteer", "For your eyes. Raising these invites questions you can't answer.");
-      t3.appendChild(pointList(b.tier3));
-      brief.appendChild(t3);
-    }
-
+    // 5. arithmetic
     if (b.mathCheck && b.mathCheck.checked) {
-      var m = section(null, "Arithmetic");
+      var m = section(null, "Arithmetic", "Yours to verify — it's math, not interpretation.");
       var p = el("p", "math");
       var v = el("span", "verdict" + (b.mathCheck.balances === false ? " bad" : ""),
         b.mathCheck.balances === true ? "Columns tie. " : b.mathCheck.balances === false ? "Columns do NOT tie. " : "Not verifiable. ");
@@ -246,32 +269,9 @@
       brief.appendChild(m);
     }
 
-    if (b.script) {
-      var sc = section(null, "The presentment");
-      var box = el("div", "script");
-      box.appendChild(el("span", "cue", "Say this — locating language only"));
-      box.appendChild(el("p", null, b.script));
-      sc.appendChild(box);
-      brief.appendChild(sc);
-    }
-
-    if (b.stopRisk && b.stopRisk.length) {
-      var sr = section(null, "Most likely to go wrong here");
-      var ul = el("ul", "plain");
-      b.stopRisk.forEach(function (r) {
-        var li = el("li");
-        var span = el("span");
-        span.appendChild(el("b", null, r.trigger || ""));
-        if (r.why) span.appendChild(document.createTextNode(" — " + r.why));
-        li.appendChild(span);
-        ul.appendChild(li);
-      });
-      sr.appendChild(ul);
-      brief.appendChild(sr);
-    }
-
+    // 6. prep notes
     if (b.notaryNotes && b.notaryNotes.length) {
-      var nn = section(null, "Prep notes");
+      var nn = section(null, "Before you go");
       var ul2 = el("ul", "plain");
       b.notaryNotes.forEach(function (t) { ul2.appendChild(el("li", null, t)); });
       nn.appendChild(ul2);
