@@ -1,57 +1,88 @@
 # Notary Signing Checklists
 
-Static, offline-capable field checklists for notary signing agents. No backend, no build step, no dependencies — plain HTML, CSS, and one small script.
+Field tools for a notary signing agent. Two parts:
 
-**Live:** https://stevenmoazez-png.github.io/notary-checklist/
+| Part | What it does | Needs network |
+|---|---|---|
+| **Checklist** (`/`) | WA residential seller closing, 39 items across six phases, stop-the-signing triggers, UPL-safe scripts. Progress saved on-device. | No — works offline once loaded |
+| **Pre-signing brief** (`/analyze/`) | Photograph or paste up to 6 pages from a closing package; get a private prep brief — tiered point-at list, discrepancies, verified arithmetic, and a presentment script with the document's real figures. | Yes — one Claude Opus 5 call per brief |
 
-## What's here
+**Live:** https://notary-brief.fly.dev/
+**Static copy (checklist only, offline):** https://stevenmoazez-png.github.io/notary-checklist/
 
-| Path | Checklist |
-|---|---|
-| `/` | WA residential **seller** closing |
+## The boundary the whole thing is built around
+
+A notary may **locate and identify** information on a document. A notary may **not explain** what it means — that is unauthorized practice of law. The brief is written for the notary and may reason freely. The one client-facing field, `script`, is constrained by schema description and system prompt to locating language only, and must end by referring the signer to their escrow officer.
+
+## Data handling
+
+Nothing is stored. Page images are held in the browser, sent once, processed in memory, and discarded. Nothing is written to disk on the server. Log lines carry request shape and outcome only — no document text, figures, or party names — and client IPs are HMAC'd with a random per-boot salt. Closing packages carry GLBA-adjacent personal and financial data, and signing services generally require destruction after the signing; retaining any of it would work against the user.
 
 ## Structure
 
 ```
-index.html                 the seller checklist
+index.html                 the checklist
+analyze/index.html         the brief generator
 manifest.webmanifest       PWA manifest (add to home screen)
-sw.js                      service worker — precaches everything for offline use
+sw.js                      service worker — precaches the site; never touches /api/
+server/
+  index.js                 Node http server: static allowlist + POST /api/analyze
+  brief-schema.js          zod schema for the brief + the system prompt
 assets/
-  checklist.css            all styling, light + dark, plus print styles
-  checklist.js             progress bar, localStorage persistence, reset, print
-  fonts.css                @font-face for the self-hosted faces
-  fonts/                   Archivo, Source Serif 4, IBM Plex Mono (latin woff2)
+  checklist.css / .js      checklist styling and behaviour (light + dark + print)
+  analyze.css / .js        brief generator styling and behaviour
+  fonts.css, fonts/        self-hosted Archivo, Source Serif 4, IBM Plex Mono
   icons/                   generated PWA + apple-touch icons
+Dockerfile, fly.toml       deployment
 ```
 
-Fonts are self-hosted rather than pulled from Google so the page renders correctly with no signal — the whole point is that it works at a kitchen table with one bar of service.
+No framework, no build step. Fonts are self-hosted so the checklist renders correctly with no signal.
 
-## Local preview
+## Running locally
 
 ```bash
-python3 -m http.server 8000
+npm install
+ANTHROPIC_API_KEY=sk-ant-... node server/index.js
 ```
 
-Then open http://localhost:8000. A real HTTP origin is required — the service worker won't register over `file://`.
+Open http://localhost:8080. Without the key the site serves normally and `/api/analyze` returns 503.
 
-## Adding another checklist
+## Configuration
 
-1. Copy `index.html` to `wa-buyer/index.html` (or whichever package).
-2. Fix the asset paths — `./assets/…` becomes `../assets/…`.
-3. Give its checkboxes a fresh `data-key` prefix and bump `STORE` in a page-local script so its progress doesn't collide with the seller list.
-4. Add the new paths to `ASSETS` in `sw.js` and **bump `CACHE`** to `-v2`.
-5. Once there are three or more, replace the root with a small hub page.
+| Env var | Required | Purpose |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | for the brief | A **workspace-scoped** key (Console → API keys → Linked account: *Not linked*). |
+| `ANTHROPIC_WORKSPACE_ID` | only for identity-linked keys | Sent as `anthropic-workspace-id`. Not needed with a workspace-scoped key. |
+| `PORT` | no | Defaults to 8080. |
+
+Set secrets on Fly without echoing them:
+
+```bash
+printf 'Paste the API key, then press Return: ' && read -rs KEY && echo && flyctl secrets set ANTHROPIC_API_KEY="$KEY" -a notary-brief && unset KEY
+```
 
 ## Deploying
 
-GitHub Pages serves from the `main` branch root. Push and it's live:
-
 ```bash
-git add -A && git commit -m "Update checklist" && git push
+flyctl deploy --now --ha=false -a notary-brief
 ```
 
-Bump the `CACHE` constant in `sw.js` on any content change, or returning visitors keep the cached copy.
+GitHub Pages also serves `main` at the static URL above; the brief generator's button there fails with a message pointing at the full version. Bump `CACHE` in `sw.js` on any content change or returning visitors keep the cached copy.
 
-## Content accuracy
+## Limits and cost
 
-The checklists describe general operating practice, not legal requirements, and are **not legal advice**. Washington notary rules (journal, certificate wording, acceptable ID) come from the Washington Department of Licensing and RCW 42.45 — verify against the current versions before relying on anything here. Document lists and recording practices vary by county and by title company.
+- 6 pages per request, 5 MB per image after the client downscales to 2000 px, 14 MB per request.
+- Per-IP rate limit: 12 briefs/hour, 40/day. In-memory, resets on deploy.
+- Cost: roughly 10–15¢ per brief at current Opus 5 pricing (measured: 5.9k in / 4.3k out ≈ 14¢ for a one-page statement). Takes about a minute.
+- The Fly machine sleeps when idle; the first request after a quiet stretch has a 3–5 s cold start.
+
+## Adding another checklist
+
+1. Copy `index.html` to e.g. `wa-buyer/index.html` and fix asset paths to `../assets/…`.
+2. Give its checkboxes a new `data-key` prefix and a new `STORE` key so progress doesn't collide.
+3. Add the new top-level directory to `PUBLIC_TOP` in `server/index.js`.
+4. Add the new paths to `ASSETS` in `sw.js` and bump `CACHE`.
+
+## Accuracy
+
+Not legal advice. The checklist describes general operating practice; Washington notary rules come from the Department of Licensing and RCW 42.45 — verify against current versions. The brief is model-extracted and can be wrong; every figure must be checked against the document before it is relied on. The brief exists to make reading the package faster, not to replace reading it.
