@@ -17,8 +17,9 @@
 
 <div class="bar">
   <div class="bar-in">
-    <span class="count">Pre-signing brief</span>
-    <span style="flex:1"></span>
+    <span class="count" id="count">Pre-signing brief</span>
+    <span class="track" id="track" role="progressbar" aria-labelledby="count" hidden><span class="fill" id="fill"></span></span>
+    <span style="flex:1" id="spacer"></span>
     <a class="btn" href="../">Checklist</a>
     <button class="btn" id="print" type="button">Print</button>
     <button class="btn" id="clear" type="button">Clear</button>

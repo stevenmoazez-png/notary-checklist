@@ -151,6 +151,65 @@
     return s;
   }
 
+  /* ---------- checklist building blocks — same DOM as the standing checklist ---------- */
+
+  function pad2(n) { return (n < 10 ? "0" : "") + n; }
+
+  function itemRow(it) {
+    var li = el("li");
+    var lab = el("label", "item");
+    var box = el("input");
+    box.type = "checkbox";
+    lab.appendChild(box);
+    var txt = el("span", "txt");
+    if (it.action) txt.appendChild(el("span", "act", it.action.trim()));
+    txt.appendChild(el("b", null, it.label || ""));
+    if (it.amount) txt.appendChild(el("span", "amt", it.amount));
+    if (it.detail) txt.appendChild(el("span", "det", " — " + it.detail));
+    lab.appendChild(txt);
+    li.appendChild(lab);
+    return li;
+  }
+
+  function itemList(items) {
+    var ul = el("ul", "items");
+    (items || []).forEach(function (it) { ul.appendChild(itemRow(it)); });
+    return ul;
+  }
+
+  function phaseEl(num, title, when, items) {
+    var s = el("section", "phase");
+    var head = el("div", "phase-head");
+    head.appendChild(el("span", "tab", pad2(num)));
+    head.appendChild(el("h2", null, title || ""));
+    s.appendChild(head);
+    if (when) s.appendChild(el("p", "when", when));
+    s.appendChild(itemList(items));
+    return s;
+  }
+
+  /* ---------- progress, counted over the brief's own boxes ---------- */
+
+  var countEl = $("count"), trackEl = $("track"), fillEl = $("fill"), spacerEl = $("spacer");
+
+  function progress() {
+    var boxes = brief.querySelectorAll('input[type="checkbox"]');
+    if (!boxes.length) {
+      countEl.textContent = "Pre-signing brief";
+      trackEl.hidden = true; spacerEl.hidden = false;
+      return;
+    }
+    var done = 0;
+    for (var i = 0; i < boxes.length; i++) if (boxes[i].checked) done++;
+    countEl.textContent = done + " / " + boxes.length;
+    fillEl.style.width = (done / boxes.length) * 100 + "%";
+    trackEl.setAttribute("aria-valuenow", String(done));
+    trackEl.setAttribute("aria-valuemin", "0");
+    trackEl.setAttribute("aria-valuemax", String(boxes.length));
+    trackEl.hidden = false; spacerEl.hidden = true;
+  }
+  brief.addEventListener("change", function (e) { if (e.target && e.target.type === "checkbox") progress(); });
+
   function draw(b) {
     brief.textContent = "";
     brief.className = "brief on";
@@ -175,109 +234,94 @@
 
     if (b.headline) brief.appendChild(el("p", "brief-headline", b.headline));
 
-    // the boundary — same words every time, the one rule everything serves
+    // the one rule everything else serves — same words every time
     var rule = el("div", "rule-note");
-    var rb = el("b", null, "The boundary: ");
-    rule.appendChild(rb);
-    rule.appendChild(document.createTextNode("you locate and identify — you do not explain. Point at any line. Say what a line means and you've crossed into practicing law. Anything substantive goes to the escrow officer."));
+    rule.appendChild(el("b", null, "The one rule everything else serves: "));
+    rule.appendChild(document.createTextNode("you locate and identify, you never explain. Point at any line on any page. Say what a line "));
+    rule.appendChild(el("em", null, "means"));
+    rule.appendChild(document.createTextNode(" and you have crossed into practicing law."));
     brief.appendChild(rule);
 
-    // 1. top-to-bottom walkthrough, in document order
-    if (b.walkthrough && b.walkthrough.length) {
-      var w = section(null, "Top to bottom — what to point at", "In the order it's printed. Read this with the page next to you.");
-      var ol = el("ol", "walk");
-      b.walkthrough.forEach(function (s) {
-        var li = el("li", "wsec");
-        li.appendChild(el("h4", "wtitle", s.title || ""));
-        if (s.lines && s.lines.length) {
-          var tbl = el("table", "wlines");
-          var tb = el("tbody");
-          s.lines.forEach(function (ln) {
-            var tr = el("tr");
-            tr.appendChild(el("td", "wl", ln.label || ""));
-            tr.appendChild(el("td", "wa", ln.amount || ""));
-            tb.appendChild(tr);
-          });
-          tbl.appendChild(tb);
-          li.appendChild(tbl);
-        }
-        if (s.pointAt) {
-          var pa = el("p", "wpoint");
-          pa.appendChild(el("span", "wcue", "Point at"));
-          pa.appendChild(document.createTextNode(s.pointAt));
-          li.appendChild(pa);
-        }
-        if (s.note) li.appendChild(el("p", "wnote", s.note));
-        ol.appendChild(li);
-      });
-      w.appendChild(ol);
-      brief.appendChild(w);
+    var n = 0;
+
+    // 01 — before you leave
+    if (b.prep && b.prep.length) {
+      brief.appendChild(phaseEl(++n, "Before you leave", "At your desk — the signing is won or lost here", b.prep));
     }
 
-    // 2. the sixty-second presentment
+    // 02.. — the document, top to bottom
+    (b.walkthrough || []).forEach(function (ph) {
+      brief.appendChild(phaseEl(++n, ph.title, ph.when, ph.items));
+    });
+
+    // the sixty-second presentment
     if (b.script) {
-      var sc = section(null, "Your 60-second presentment");
       var box = el("div", "script");
-      box.appendChild(el("span", "cue", "Say this — then stop talking"));
+      box.appendChild(el("span", "cue", "The sixty-second presentment — say this, then stop talking"));
       box.appendChild(el("p", null, b.script));
-      var after = el("p", "after", "Finger lands on the biggest deduction when you say it. Then watch their face.");
-      box.appendChild(after);
-      sc.appendChild(box);
-      brief.appendChild(sc);
+      box.appendChild(el("p", "after", "Finger lands on the biggest deduction as you say it. Silence is the tool — it gives them room to react while there's still time to fix it."));
+      brief.appendChild(box);
     }
 
-    // 3. flag and escalate
-    if (b.flags && b.flags.length) {
-      var f = section(null, "Flag-and-escalate list", "For escrow, not the client. Sorted by how much they matter.");
-      var wrap = el("div", "anoms");
-      b.flags
+    // never skip
+    if (b.neverSkip && b.neverSkip.length) {
+      var ns = el("section", "panel");
+      var nh = el("h2", null, "Never skip");
+      nh.style.color = "var(--flag)";
+      ns.appendChild(nh);
+      ns.appendChild(el("p", "when", "If you did only these, you did the job."));
+      ns.appendChild(itemList(b.neverSkip));
+      brief.appendChild(ns);
+    }
+
+    // stop the signing — this document's version
+    if (b.stop && b.stop.length) {
+      var wrap = el("section", "panel");
+      var st = el("div", "stop");
+      st.appendChild(el("h2", null, "Stop the signing"));
+      st.appendChild(el("p", "when", "Any one of these. You do not need a second reason."));
+      var ul = el("ul");
+      b.stop
         .slice()
         .sort(function (a, c) {
           var r = { high: 0, medium: 1, low: 2 };
           return (r[a.severity] ?? 3) - (r[c.severity] ?? 3);
         })
-        .forEach(function (a, i) {
-          var n = el("div", "anom" + (a.severity === "high" ? " high" : ""));
-          n.appendChild(el("div", "sev", (i + 1) + " · " + (a.severity || "note") + " · " +
-            (a.severity === "high" ? "stop the signing" : a.severity === "medium" ? "raise with escrow first" : "mention when returning the package")));
-          n.appendChild(el("div", "what", a.what || ""));
-          if (a.detail) n.appendChild(el("p", "detail", a.detail));
-          wrap.appendChild(n);
+        .forEach(function (s) {
+          var li = el("li");
+          var span = el("span");
+          var line = el("span");
+          line.appendChild(el("span", "sevtag",
+            s.severity === "high" ? "stop" : s.severity === "medium" ? "escrow first" : "on return"));
+          line.appendChild(document.createTextNode(s.trigger || ""));
+          span.appendChild(line);
+          if (s.detail) span.appendChild(el("span", "sdet", s.detail));
+          li.appendChild(span);
+          ul.appendChild(li);
         });
-      f.appendChild(wrap);
-      brief.appendChild(f);
+      st.appendChild(ul);
+      var then = el("p", "then");
+      then.appendChild(el("b", null, "What stopping looks like: "));
+      then.appendChild(document.createTextNode("stay calm, stay in the chair. \"I want to make sure this is right before you sign it — let me get your escrow officer on the phone.\" You never decide whether the closing proceeds. You make sure nobody signs something blind."));
+      st.appendChild(then);
+      wrap.appendChild(st);
+      brief.appendChild(wrap);
     }
 
-    // 4. if you only do a few things
-    if (b.neverSkip && b.neverSkip.length) {
-      var ns = section("t1", "Never skip", "If you did only these, you did the job.");
-      var nl = el("ol", "never");
-      b.neverSkip.forEach(function (t) { nl.appendChild(el("li", null, t)); });
-      ns.appendChild(nl);
-      brief.appendChild(ns);
-    }
-
-    // 5. arithmetic
+    // arithmetic
     if (b.mathCheck && b.mathCheck.checked) {
-      var m = section(null, "Arithmetic", "Yours to verify — it's math, not interpretation.");
+      var m = el("section", "panel");
+      m.appendChild(el("h2", null, "Arithmetic"));
+      m.appendChild(el("p", "when", "Yours to verify — it's math, not interpretation."));
       var p = el("p", "math");
-      var v = el("span", "verdict" + (b.mathCheck.balances === false ? " bad" : ""),
-        b.mathCheck.balances === true ? "Columns tie. " : b.mathCheck.balances === false ? "Columns do NOT tie. " : "Not verifiable. ");
-      p.appendChild(v);
+      p.appendChild(el("span", "verdict" + (b.mathCheck.balances === false ? " bad" : ""),
+        b.mathCheck.balances === true ? "Columns tie. " : b.mathCheck.balances === false ? "Columns do NOT tie. " : "Not verifiable. "));
       p.appendChild(document.createTextNode(b.mathCheck.detail || ""));
       m.appendChild(p);
       brief.appendChild(m);
     }
 
-    // 6. prep notes
-    if (b.notaryNotes && b.notaryNotes.length) {
-      var nn = section(null, "Before you go");
-      var ul2 = el("ul", "plain");
-      b.notaryNotes.forEach(function (t) { ul2.appendChild(el("li", null, t)); });
-      nn.appendChild(ul2);
-      brief.appendChild(nn);
-    }
-
+    progress();
     brief.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
@@ -325,6 +369,7 @@
     brief.textContent = "";
     clearStatus();
     render();
+    progress();
     window.scrollTo({ top: 0, behavior: "smooth" });
   });
 

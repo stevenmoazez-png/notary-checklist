@@ -128,7 +128,24 @@ ul.points li:last-child { border-bottom: 1px solid var(--rule); }
 .sec.t1 > h3 { color: var(--flag); }
 .sec.t1 ul.points li { border-left: 2px solid var(--flag); padding-left: .8rem; }
 
-/* ---- top-to-bottom walkthrough ---- */
+/* ---- checklist-form brief (reuses .phase/.items/.script/.stop from checklist.css) ---- */
+.brief .phase:first-of-type { margin-top: 2rem; }
+.brief .when { white-space: normal; }
+label.item .act { color: var(--ink-2); margin-right: .3em; }
+label.item .amt { font-family: var(--f-mono); font-variant-numeric: tabular-nums; margin-left: .45em; white-space: nowrap; }
+label.item .det { color: var(--ink-2); }
+label.item input:checked ~ .txt .act,
+label.item input:checked ~ .txt .det,
+label.item input:checked ~ .txt .amt { color: var(--ink-3); }
+.brief .stop .sevtag {
+  font-family: var(--f-mono); font-size: .64rem; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--flag); margin-right: .5em; white-space: nowrap;
+}
+.brief .stop li span { display: block; }
+.brief .stop .sdet { font-size: .86rem; color: var(--ink-2); margin-top: .15rem; }
+.brief .math { margin-top: .6rem; }
+
+/* ---- (legacy) top-to-bottom walkthrough ---- */
 .brief .rule-note { margin-top: 1.3rem; }
 
 ol.walk { list-style: none; margin: .4rem 0 0; padding: 0; counter-reset: sec; }
