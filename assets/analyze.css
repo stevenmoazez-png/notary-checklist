@@ -37,12 +37,14 @@
   display: block; font-size: .7rem; font-weight: 600; letter-spacing: .12em;
   text-transform: uppercase; color: var(--ink-3); margin-bottom: .4rem;
 }
-.ctx textarea {
-  width: 100%; min-height: 3.4rem; resize: vertical;
-  font-family: var(--f-ui); font-size: .92rem; color: var(--ink);
+.ctx textarea, .ctx input {
+  width: 100%; font-family: var(--f-ui); font-size: .92rem; color: var(--ink);
   background: var(--paper); border: 1px solid var(--rule); border-radius: 5px;
   padding: .55rem .7rem;
 }
+.ctx textarea { min-height: 3.4rem; resize: vertical; }
+.ctx input[type="password"] { font-family: var(--f-mono); letter-spacing: .08em; }
+.ctx input.bad { border-color: var(--flag); }
 
 .actions { display: flex; gap: .6rem; align-items: center; margin-top: 1rem; flex-wrap: wrap; }
 .btn-go {

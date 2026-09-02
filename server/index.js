@@ -20,7 +20,15 @@ const MAX_IMAGES = 6;
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 const ALLOWED_MEDIA = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
 
-const RATE = { perHour: 12, perDay: 40 };
+/* With a passcode in front, the rate limit is a cost fuse, not a bouncer.
+   Per-IP numbers are sized so a small office sharing one address never
+   trips them in normal use; the global cap bounds the worst day.          */
+const RATE = { perHour: 60, perDay: 200, globalPerDay: 300 };
+const PASSCODE_FAILS_PER_HOUR = 10;
+
+/* Shared office passcode. Fail closed: with none configured the analyzer
+   refuses rather than running open on someone else's API credits.        */
+const PASSCODE = (process.env.APP_PASSCODE || "").trim();
 
 /* Only these top-level paths are ever served. Everything else in the image —
    server code, package manifests, deploy config, node_modules — is not. */
@@ -51,11 +59,17 @@ const anthropic = new Anthropic({
    In-memory, so it resets on deploy and is per-machine. Fine for a
    single-machine personal tool; swap for a shared store before scaling out. */
 const hits = new Map();
+const globalHits = [];
+const passcodeFails = new Map();
 
 function rateCheck(ip) {
   const now = Date.now();
   const hour = now - 3600_000;
   const day = now - 86_400_000;
+
+  while (globalHits.length && globalHits[0] <= day) globalHits.shift();
+  if (globalHits.length >= RATE.globalPerDay) return { ok: false, scope: "day", retryAfter: 3600 };
+
   const list = (hits.get(ip) || []).filter((t) => t > day);
   const inHour = list.filter((t) => t > hour).length;
 
@@ -63,8 +77,30 @@ function rateCheck(ip) {
   if (inHour >= RATE.perHour) return { ok: false, scope: "hour", retryAfter: 900 };
 
   list.push(now);
+  globalHits.push(now);
   hits.set(ip, list);
   if (hits.size > 5000) for (const [k, v] of hits) if (!v.some((t) => t > day)) hits.delete(k);
+  return { ok: true };
+}
+
+/* Constant-time passcode comparison, with a per-IP lockout on failures so
+   the code can't be guessed by hammering the endpoint.                    */
+function passcodeCheck(req, ip) {
+  const now = Date.now();
+  const hour = now - 3600_000;
+  const fails = (passcodeFails.get(ip) || []).filter((t) => t > hour);
+  if (fails.length >= PASSCODE_FAILS_PER_HOUR) return { ok: false, locked: true };
+
+  const given = String(req.headers["x-passcode"] || "");
+  const digest = (s) => crypto.createHash("sha256").update(s, "utf8").digest();
+  const match = crypto.timingSafeEqual(digest(given), digest(PASSCODE));
+
+  if (!match) {
+    fails.push(now);
+    passcodeFails.set(ip, fails);
+    return { ok: false, locked: false };
+  }
+  if (fails.length) passcodeFails.delete(ip);
   return { ok: true };
 }
 
@@ -183,6 +219,16 @@ function validateImages(input) {
 /* ---- analyze ------------------------------------------------------------- */
 async function analyze(req, res) {
   const ip = clientIp(req);
+
+  const gate = passcodeCheck(req, ip);
+  if (!gate.ok) {
+    if (gate.locked) {
+      log({ ip, status: 429, note: "passcode-locked" });
+      return send(res, 429, { error: "Too many wrong passcodes. Try again in an hour." }, { "retry-after": "3600" });
+    }
+    return send(res, 401, { error: "Wrong passcode." });
+  }
+
   const limit = rateCheck(ip);
   if (!limit.ok) {
     return send(
@@ -299,6 +345,7 @@ const server = http.createServer(async (req, res) => {
         ok: true,
         keyConfigured: Boolean(process.env.ANTHROPIC_API_KEY),
         workspaceConfigured: Boolean(WORKSPACE_ID),
+        passcodeConfigured: Boolean(PASSCODE),
       });
     }
 
@@ -306,6 +353,9 @@ const server = http.createServer(async (req, res) => {
       if (req.method !== "POST") return send(res, 405, { error: "Use POST." }, { allow: "POST" });
       if (!process.env.ANTHROPIC_API_KEY) {
         return send(res, 503, { error: "The analyzer is not configured on this server yet." });
+      }
+      if (!PASSCODE) {
+        return send(res, 503, { error: "No office passcode is set on the server yet, so the analyzer is locked." });
       }
       return await analyze(req, res);
     }
@@ -326,5 +376,6 @@ server.listen(PORT, "0.0.0.0", () => {
     port: PORT,
     analyzer: process.env.ANTHROPIC_API_KEY ? "configured" : "NOT CONFIGURED — set ANTHROPIC_API_KEY",
     workspace: WORKSPACE_ID ? "set" : "not set",
+    passcode: PASSCODE ? "set" : "NOT SET — analyzer locked until APP_PASSCODE is set",
   });
 });

@@ -11,6 +11,19 @@
   var fileInput = $("file"), drop = $("drop"), list = $("pages");
   var go = $("go"), hint = $("hint"), status = $("status"), brief = $("brief");
 
+  /* Office passcode — typed once, kept on this device. localStorage can throw
+     in private mode, so every access is guarded. */
+  var PASS_KEY = "nsa-office-passcode";
+  var pass = $("passcode");
+  try { pass.value = window.localStorage.getItem(PASS_KEY) || ""; } catch (e) {}
+  pass.addEventListener("change", function () {
+    pass.classList.remove("bad");
+    try {
+      if (pass.value) window.localStorage.setItem(PASS_KEY, pass.value);
+      else window.localStorage.removeItem(PASS_KEY);
+    } catch (e) {}
+  });
+
   /* ---------- helpers ---------- */
 
   function el(tag, cls, text) {
@@ -282,6 +295,11 @@
 
   go.addEventListener("click", async function () {
     if (!pages.length) return;
+    if (!pass.value.trim()) {
+      pass.classList.add("bad");
+      pass.focus();
+      return setStatus("Enter the office passcode first.", "err");
+    }
     go.disabled = true;
     brief.className = "brief";
     brief.textContent = "";
@@ -290,7 +308,7 @@
     try {
       var res = await fetch("../api/analyze", {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: { "content-type": "application/json", "x-passcode": pass.value.trim() },
         body: JSON.stringify({
           context: $("context").value.slice(0, 600),
           images: pages.map(function (p) { return { media_type: p.media_type, data: p.data }; })
@@ -298,6 +316,13 @@
       });
 
       var body = await res.json().catch(function () { return {}; });
+      if (res.status === 401) {
+        try { window.localStorage.removeItem(PASS_KEY); } catch (e) {}
+        pass.value = "";
+        pass.classList.add("bad");
+        pass.focus();
+        throw new Error("That passcode isn't right. Check with the office and try again.");
+      }
       if (res.status === 404) {
         throw new Error("The analyzer isn't running on this address — this is the static copy. Open the full version to use it.");
       }
