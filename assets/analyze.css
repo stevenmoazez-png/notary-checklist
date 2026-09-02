@@ -43,8 +43,6 @@
   padding: .55rem .7rem;
 }
 .ctx textarea { min-height: 3.4rem; resize: vertical; }
-.ctx input[type="password"] { font-family: var(--f-mono); letter-spacing: .08em; }
-.ctx input.bad { border-color: var(--flag); }
 
 .actions { display: flex; gap: .6rem; align-items: center; margin-top: 1rem; flex-wrap: wrap; }
 .btn-go {
