@@ -1,12 +1,16 @@
 /* Bump CACHE whenever site files change, so clients pick up the new version. */
-var CACHE = "nsa-checklist-v2";
+var CACHE = "nsa-checklist-v3";
 
 var ASSETS = [
   "./",
   "./index.html",
+  "./analyze/",
+  "./analyze/index.html",
   "./manifest.webmanifest",
   "./assets/checklist.css",
   "./assets/checklist.js",
+  "./assets/analyze.css",
+  "./assets/analyze.js",
   "./assets/fonts.css",
   "./assets/fonts/archivo-normal-1.woff2",
   "./assets/fonts/ibm-plex-mono-normal-2.woff2",
@@ -42,7 +46,9 @@ self.addEventListener("activate", function (e) {
 /* Network-first for the page so updates land; cache-first for static assets. */
 self.addEventListener("fetch", function (e) {
   var req = e.request;
-  if (req.method !== "GET" || new URL(req.url).origin !== self.location.origin) return;
+  var url = new URL(req.url);
+  if (req.method !== "GET" || url.origin !== self.location.origin) return;
+  if (url.pathname.indexOf("/api/") !== -1) return;   // analysis is always live, never cached
 
   if (req.mode === "navigate") {
     e.respondWith(

@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Pre-Signing Brief — Notary Signing Agent Field Guide</title>
+<meta name="description" content="Photograph a page from a closing package and get a private pre-signing brief: what to point at, what will surprise the signer, and what is wrong with the document.">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#1F4E79">
+<link rel="manifest" href="../manifest.webmanifest">
+<link rel="icon" href="../assets/icons/icon-192.png" sizes="192x192">
+<link rel="apple-touch-icon" href="../assets/icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-title" content="Signing Checklist">
+<link rel="stylesheet" href="../assets/analyze.css">
+</head>
+<body>
+
+<div class="bar">
+  <div class="bar-in">
+    <span class="count">Pre-signing brief</span>
+    <span style="flex:1"></span>
+    <a class="btn" href="../">Checklist</a>
+    <button class="btn" id="print" type="button">Print</button>
+    <button class="btn" id="clear" type="button">Clear</button>
+  </div>
+</div>
+
+<div class="wrap">
+
+  <header class="mast">
+    <p class="eyebrow">Notary Signing Agent · Washington</p>
+    <h1>Pre-Signing Brief</h1>
+    <p class="standfirst">Photograph the pages before you go. You get what to point at, what will surprise the signer, and what's wrong with the document — a prep brief for you, not an explanation for the client.</p>
+  </header>
+
+  <main>
+    <section class="intake" id="intake">
+      <label class="drop" id="drop" for="file">
+        <span class="big">Add page photos</span>
+        <span class="small">Tap to take a photo or choose files · up to 6 pages · JPEG, PNG, or WebP</span>
+        <input type="file" id="file" accept="image/*" multiple>
+      </label>
+
+      <ul class="pages" id="pages"></ul>
+
+      <div class="ctx">
+        <label for="context">Anything you already know (optional)</label>
+        <textarea id="context" maxlength="600" placeholder="e.g. seller closing, condo, escrow said there was an HOA issue"></textarea>
+      </div>
+
+      <div class="actions">
+        <button class="btn-go" id="go" type="button" disabled>Build the brief</button>
+        <span class="hint" id="hint">Add at least one page</span>
+      </div>
+
+      <p class="privacy"><b>Nothing is stored.</b> Pages are held in your browser, sent once for analysis, and discarded — nothing is written to disk on the server, and no names or figures are logged. The brief lives on this page until you close or clear it, so print it if you want a copy. Closing packages carry sensitive personal and financial data; treat this page like the package itself.</p>
+    </section>
+
+    <div class="status" id="status"></div>
+
+    <section class="brief" id="brief" aria-live="polite"></section>
+  </main>
+
+  <footer>
+    <p>General operational support for study and field use — <b>not legal advice</b>, and not a substitute for reading the package yourself. Figures are extracted by a model and can be wrong; verify every number against the document before you rely on it.</p>
+  </footer>
+
+</div>
+
+<script src="../assets/analyze.js" defer></script>
+</body>
+</html>

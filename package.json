@@ -1,0 +1,19 @@
+{
+  "name": "notary-checklist",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Offline field checklists and a pre-signing document brief generator for notary signing agents.",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node server/index.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.123.0",
+    "zod": "^4.5.4"
+  }
+}
