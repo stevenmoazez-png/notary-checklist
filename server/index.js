@@ -242,9 +242,8 @@ async function analyze(req, res) {
 /* Structured log line. Deliberately carries no document content, no extracted
    figures, and no party names — only shape and outcome. */
 function log(o) {
-  console.log(
-    JSON.stringify({ t: new Date().toISOString(), ip: hashIp(o.ip), ...o, ip_raw: undefined })
-  );
+  // spread first, then override — the other order let the raw ip win
+  console.log(JSON.stringify({ t: new Date().toISOString(), ...o, ip: hashIp(o.ip) }));
 }
 
 function hashIp(ip) {
