@@ -162,7 +162,10 @@
     box.type = "checkbox";
     lab.appendChild(box);
     var txt = el("span", "txt");
-    if (it.action) txt.appendChild(el("span", "act", it.action.trim()));
+    if (it.action) {
+      txt.appendChild(el("span", "act", it.action.trim()));
+      txt.appendChild(document.createTextNode(" "));   // real space, so copy/print/screen readers read it right
+    }
     txt.appendChild(el("b", null, it.label || ""));
     if (it.amount) txt.appendChild(el("span", "amt", it.amount));
     if (it.detail) txt.appendChild(el("span", "det", " — " + it.detail));

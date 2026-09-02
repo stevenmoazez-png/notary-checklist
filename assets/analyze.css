@@ -131,7 +131,7 @@ ul.points li:last-child { border-bottom: 1px solid var(--rule); }
 /* ---- checklist-form brief (reuses .phase/.items/.script/.stop from checklist.css) ---- */
 .brief .phase:first-of-type { margin-top: 2rem; }
 .brief .when { white-space: normal; }
-label.item .act { color: var(--ink-2); margin-right: .3em; }
+label.item .act { color: var(--ink-2); }
 label.item .amt { font-family: var(--f-mono); font-variant-numeric: tabular-nums; margin-left: .45em; white-space: nowrap; }
 label.item .det { color: var(--ink-2); }
 label.item input:checked ~ .txt .act,
