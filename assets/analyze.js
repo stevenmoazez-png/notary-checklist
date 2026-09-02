@@ -107,6 +107,38 @@
     if (e.dataTransfer && e.dataTransfer.files) addFiles(e.dataTransfer.files);
   });
 
+  /* Paste anywhere on the page — screenshots are the common case, and the
+     clipboard is usually where they already are. */
+  document.addEventListener("paste", function (e) {
+    var cd = e.clipboardData;
+    if (!cd) return;
+
+    var files = [];
+    if (cd.files && cd.files.length) {
+      files = Array.prototype.slice.call(cd.files);
+    } else if (cd.items) {
+      for (var i = 0; i < cd.items.length; i++) {
+        if (cd.items[i].kind === "file") {
+          var f = cd.items[i].getAsFile();
+          if (f) files.push(f);
+        }
+      }
+    }
+
+    var images = files.filter(function (f) { return /^image\//.test(f.type); });
+    if (!images.length) {
+      // don't hijack ordinary text pastes into the context box
+      if (e.target && e.target.tagName === "TEXTAREA") return;
+      if (cd.types && Array.prototype.indexOf.call(cd.types, "Files") !== -1) {
+        setStatus("That clipboard item isn't an image.", "err");
+      }
+      return;
+    }
+
+    e.preventDefault();
+    addFiles(images);
+  });
+
   /* ---------- rendering the brief ---------- */
 
   function section(cls, title, sub) {

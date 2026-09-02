@@ -1,5 +1,5 @@
 /* Bump CACHE whenever site files change, so clients pick up the new version. */
-var CACHE = "nsa-checklist-v3";
+var CACHE = "nsa-checklist-v4";
 
 var ASSETS = [
   "./",
