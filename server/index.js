@@ -2,6 +2,7 @@ import http from "node:http";
 import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
+import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
 import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
@@ -21,6 +22,10 @@ const ALLOWED_MEDIA = new Set(["image/jpeg", "image/png", "image/webp", "image/g
 
 const RATE = { perHour: 12, perDay: 40 };
 
+/* Only these top-level paths are ever served. Everything else in the image —
+   server code, package manifests, deploy config, node_modules — is not. */
+const PUBLIC_TOP = new Set(["index.html", "analyze", "assets", "sw.js", "manifest.webmanifest"]);
+
 const MIME = {
   ".html": "text/html; charset=utf-8",
   ".css": "text/css; charset=utf-8",
@@ -32,10 +37,15 @@ const MIME = {
   ".svg": "image/svg+xml",
   ".ico": "image/x-icon",
   ".txt": "text/plain; charset=utf-8",
-  ".md": "text/markdown; charset=utf-8",
 };
 
-const anthropic = new Anthropic();
+/* ---- Anthropic client -----------------------------------------------------
+   Identity-linked API keys must name the workspace they act in. Standard
+   workspace-scoped keys don't need it; the header is harmless either way.  */
+const WORKSPACE_ID = (process.env.ANTHROPIC_WORKSPACE_ID || "").trim();
+const anthropic = new Anthropic({
+  defaultHeaders: WORKSPACE_ID ? { "anthropic-workspace-id": WORKSPACE_ID } : undefined,
+});
 
 /* ---- rate limiting ------------------------------------------------------
    In-memory, so it resets on deploy and is per-machine. Fine for a
@@ -59,10 +69,27 @@ function rateCheck(ip) {
 }
 
 function clientIp(req) {
+  // fly-client-ip is set by Fly's edge and cannot be spoofed by the client.
   const fwd = req.headers["fly-client-ip"] || req.headers["x-forwarded-for"];
   return String(fwd || req.socket.remoteAddress || "unknown").split(",")[0].trim();
 }
 
+/* ---- logging ------------------------------------------------------------
+   Log lines carry request shape and outcome only — never document content,
+   figures, or party names. IPs are HMAC'd with a salt generated at boot and
+   never written anywhere, so the log can correlate one client's requests
+   within a process lifetime but cannot be reversed to an address.         */
+const LOG_SALT = crypto.randomBytes(32);
+
+function hashIp(ip) {
+  return "ip_" + crypto.createHmac("sha256", LOG_SALT).update(String(ip)).digest("base64url").slice(0, 12);
+}
+
+function log(o) {
+  console.log(JSON.stringify({ t: new Date().toISOString(), ...o, ip: o.ip ? hashIp(o.ip) : undefined }));
+}
+
+/* ---- responses ---------------------------------------------------------- */
 function send(res, status, body, headers = {}) {
   const data = typeof body === "string" || Buffer.isBuffer(body) ? body : JSON.stringify(body);
   res.writeHead(status, {
@@ -76,13 +103,19 @@ function send(res, status, body, headers = {}) {
 
 /* ---- static -------------------------------------------------------------- */
 async function serveStatic(req, res, urlPath) {
-  let rel = decodeURIComponent(urlPath.split("?")[0]);
+  let rel;
+  try {
+    rel = decodeURIComponent(urlPath.split("?")[0]);
+  } catch {
+    return send(res, 400, { error: "Bad path." });
+  }
   if (rel.endsWith("/")) rel += "index.html";
 
   const full = path.resolve(ROOT, "." + rel);
-  // path traversal guard — never serve outside the site root
-  if (!full.startsWith(ROOT + path.sep) && full !== ROOT) return send(res, 403, { error: "Forbidden" });
-  if (full.startsWith(path.join(ROOT, "server"))) return send(res, 404, { error: "Not found" });
+  if (!full.startsWith(ROOT + path.sep)) return send(res, 403, { error: "Forbidden" });
+
+  const top = path.relative(ROOT, full).split(path.sep)[0];
+  if (!PUBLIC_TOP.has(top)) return send(res, 404, { error: "Not found" });
 
   let stat;
   try {
@@ -93,13 +126,14 @@ async function serveStatic(req, res, urlPath) {
   if (stat.isDirectory()) return serveStatic(req, res, rel + "/");
 
   const ext = path.extname(full).toLowerCase();
-  const isHashed = ext === ".woff2" || full.includes(`${path.sep}icons${path.sep}`);
+  const immutable = ext === ".woff2" || full.includes(`${path.sep}icons${path.sep}`);
   res.writeHead(200, {
     "content-type": MIME[ext] || "application/octet-stream",
     "content-length": stat.size,
-    "cache-control": isHashed ? "public, max-age=31536000" : "public, max-age=300",
+    "cache-control": immutable ? "public, max-age=31536000, immutable" : "public, max-age=300",
     "x-content-type-options": "nosniff",
   });
+  if (req.method === "HEAD") return res.end();
   fs.createReadStream(full).pipe(res);
 }
 
@@ -108,18 +142,24 @@ function readBody(req) {
   return new Promise((resolve, reject) => {
     let size = 0;
     const chunks = [];
-    req.on("data", (c) => {
+    const onData = (c) => {
       size += c.length;
       if (size > MAX_BODY_BYTES) {
+        req.off("data", onData);
+        req.resume(); // drain the rest so the 413 can actually be written
         reject(Object.assign(new Error("Payload too large"), { status: 413 }));
-        req.destroy();
         return;
       }
       chunks.push(c);
-    });
+    };
+    req.on("data", onData);
     req.on("end", () => resolve(Buffer.concat(chunks)));
     req.on("error", reject);
   });
+}
+
+function badRequest(message) {
+  return Object.assign(new Error(message), { status: 400 });
 }
 
 function validateImages(input) {
@@ -140,10 +180,6 @@ function validateImages(input) {
   });
 }
 
-function badRequest(message) {
-  return Object.assign(new Error(message), { status: 400, safe: true });
-}
-
 /* ---- analyze ------------------------------------------------------------- */
 async function analyze(req, res) {
   const ip = clientIp(req);
@@ -161,7 +197,9 @@ async function analyze(req, res) {
   try {
     payload = JSON.parse((await readBody(req)).toString("utf8"));
   } catch (e) {
-    if (e.status === 413) return send(res, 413, { error: "Those images are too large. Retake at a lower resolution." });
+    if (e.status === 413) {
+      return send(res, 413, { error: "Those images are too large. Retake at a lower resolution." }, { connection: "close" });
+    }
     return send(res, 400, { error: "Could not read the request." });
   }
 
@@ -174,6 +212,7 @@ async function analyze(req, res) {
 
   const context = typeof payload?.context === "string" ? payload.context.slice(0, 600).trim() : "";
   const started = Date.now();
+  const base = { ip, pages: imageBlocks.length };
 
   try {
     const response = await anthropic.messages.parse({
@@ -200,56 +239,54 @@ async function analyze(req, res) {
     });
 
     if (response.stop_reason === "refusal") {
-      log({ ip, status: 422, ms: Date.now() - started, pages: imageBlocks.length, note: "refusal" });
+      log({ ...base, status: 422, ms: Date.now() - started, note: "refusal" });
       return send(res, 422, { error: "The model declined to analyze this document. Try a clearer photo of the page." });
     }
 
     const brief = response.parsed_output;
     if (!brief) {
-      log({ ip, status: 502, ms: Date.now() - started, pages: imageBlocks.length, note: "unparsed" });
+      log({ ...base, status: 502, ms: Date.now() - started, note: "unparsed" });
       return send(res, 502, { error: "The analysis came back malformed. Try again." });
     }
 
     log({
-      ip,
+      ...base,
       status: 200,
       ms: Date.now() - started,
-      pages: imageBlocks.length,
       in: response.usage?.input_tokens,
       out: response.usage?.output_tokens,
     });
     return send(res, 200, { brief });
   } catch (err) {
-    const status =
-      err instanceof Anthropic.RateLimitError ? 429
-      : err instanceof Anthropic.AuthenticationError ? 500
-      : err instanceof Anthropic.BadRequestError ? 400
-      : err instanceof Anthropic.APIConnectionError ? 504
-      : 500;
+    // Most-specific first. Configuration problems get a distinct message so
+    // they are diagnosable from the UI instead of hiding behind a generic 500.
+    let status = 500;
+    let message = "Analysis failed. Try again.";
 
-    const message =
-      status === 429 ? "Upstream rate limit. Wait a moment and try again."
-      : status === 504 ? "Could not reach the analysis service. Check your connection."
-      : status === 400 ? "The service rejected those images. Try re-photographing the page."
-      : "Analysis failed. Try again.";
+    if (err instanceof Anthropic.AuthenticationError) {
+      message = "The server's API key was rejected. The key needs to be re-set.";
+    } else if (err instanceof Anthropic.PermissionDeniedError) {
+      status = 500;
+      message = "The server's API key doesn't have access to this model or workspace.";
+    } else if (err instanceof Anthropic.RateLimitError) {
+      status = 429;
+      message = "Upstream rate limit. Wait a moment and try again.";
+    } else if (err instanceof Anthropic.BadRequestError) {
+      status = 400;
+      message = "The service rejected the request. If this keeps happening, the server configuration needs attention.";
+    } else if (err instanceof Anthropic.APIConnectionError) {
+      status = 504;
+      message = "Could not reach the analysis service. Check your connection.";
+    }
 
-    // err.message may quote document text — never log it.
-    log({ ip, status, ms: Date.now() - started, pages: imageBlocks.length, note: err.constructor?.name });
+    // A 4xx from the API describes the request, not the document — log a
+    // truncated field path so it is diagnosable. Never log 5xx bodies.
+    const apiMsg = err?.error?.error?.message;
+    const detail = status === 400 && apiMsg ? String(apiMsg).slice(0, 220) : undefined;
+
+    log({ ...base, status, ms: Date.now() - started, note: err.constructor?.name, detail });
     return send(res, status, { error: message });
   }
-}
-
-/* Structured log line. Deliberately carries no document content, no extracted
-   figures, and no party names — only shape and outcome. */
-function log(o) {
-  // spread first, then override — the other order let the raw ip win
-  console.log(JSON.stringify({ t: new Date().toISOString(), ...o, ip: hashIp(o.ip) }));
-}
-
-function hashIp(ip) {
-  let h = 0;
-  for (let i = 0; i < ip.length; i++) h = (h * 31 + ip.charCodeAt(i)) | 0;
-  return "ip_" + (h >>> 0).toString(36);
 }
 
 /* ---- server -------------------------------------------------------------- */
@@ -257,7 +294,13 @@ const server = http.createServer(async (req, res) => {
   try {
     const url = req.url || "/";
 
-    if (url === "/api/health") return send(res, 200, { ok: true, keyConfigured: Boolean(process.env.ANTHROPIC_API_KEY) });
+    if (url === "/api/health") {
+      return send(res, 200, {
+        ok: true,
+        keyConfigured: Boolean(process.env.ANTHROPIC_API_KEY),
+        workspaceConfigured: Boolean(WORKSPACE_ID),
+      });
+    }
 
     if (url.startsWith("/api/analyze")) {
       if (req.method !== "POST") return send(res, 405, { error: "Use POST." }, { allow: "POST" });
@@ -267,21 +310,21 @@ const server = http.createServer(async (req, res) => {
       return await analyze(req, res);
     }
 
+    if (url.startsWith("/api/")) return send(res, 404, { error: "Not found" });
+
     if (req.method !== "GET" && req.method !== "HEAD") return send(res, 405, { error: "Method not allowed." });
     return await serveStatic(req, res, url);
   } catch (err) {
-    console.log(JSON.stringify({ t: new Date().toISOString(), status: 500, note: "unhandled" }));
+    log({ status: 500, note: "unhandled", kind: err?.constructor?.name });
     if (!res.headersSent) send(res, 500, { error: "Server error." });
   }
 });
 
 server.listen(PORT, "0.0.0.0", () => {
-  console.log(
-    JSON.stringify({
-      t: new Date().toISOString(),
-      msg: "listening",
-      port: PORT,
-      analyzer: process.env.ANTHROPIC_API_KEY ? "configured" : "NOT CONFIGURED — set ANTHROPIC_API_KEY",
-    })
-  );
+  log({
+    msg: "listening",
+    port: PORT,
+    analyzer: process.env.ANTHROPIC_API_KEY ? "configured" : "NOT CONFIGURED — set ANTHROPIC_API_KEY",
+    workspace: WORKSPACE_ID ? "set" : "not set",
+  });
 });
