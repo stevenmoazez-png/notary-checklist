@@ -1,5 +1,5 @@
 app = "notary-brief"
-primary_region = "sea"
+primary_region = "sjc"
 
 [build]
 
